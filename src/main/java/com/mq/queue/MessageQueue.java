@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Queue;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -51,7 +52,9 @@ public class MessageQueue implements IMessageQueue {
         Message message = messageStore.get(messageId);
         message.setState(MessageState.IN_FLIGHT);
         message.setVisibilityDeadline(System.currentTimeMillis() + visibilityTimeoutMs);
-        scheduler.schedule(() -> handleTimeout(messageId), visibilityTimeoutMs, TimeUnit.MILLISECONDS);
+        String token = UUID.randomUUID().toString();
+        message.setConsumptionToken(token);
+        scheduler.schedule(() -> handleTimeout(messageId, token), visibilityTimeoutMs, TimeUnit.MILLISECONDS);
         return message;
     }
 
@@ -92,7 +95,7 @@ public class MessageQueue implements IMessageQueue {
         scheduler.shutdown();
     }
 
-    private synchronized void handleTimeout(String messageId) {
+    private synchronized void handleTimeout(String messageId, String expectedToken) {
         Message message = messageStore.get(messageId);
         if (message == null) {
             return; // already ACKed
@@ -102,6 +105,9 @@ public class MessageQueue implements IMessageQueue {
         }
         if (message.getState() == MessageState.DEAD) {
             throw new IllegalStateException("Message in unexpected DEAD state during timeout: " + messageId);
+        }
+        if (!expectedToken.equals(message.getConsumptionToken())) {
+            return; // stale task from a previous consumption — a newer token is in charge
         }
         requeueOrDead(message);
     }
