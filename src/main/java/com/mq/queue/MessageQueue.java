@@ -50,10 +50,12 @@ public class MessageQueue implements IMessageQueue {
             return null;
         }
         Message message = messageStore.get(messageId);
-        message.setState(MessageState.IN_FLIGHT);
-        message.setVisibilityDeadline(System.currentTimeMillis() + visibilityTimeoutMs);
         String token = UUID.randomUUID().toString();
-        message.setConsumptionToken(token);
+        synchronized (message) {
+            message.setState(MessageState.IN_FLIGHT);
+            message.setVisibilityDeadline(System.currentTimeMillis() + visibilityTimeoutMs);
+            message.setConsumptionToken(token);
+        }
         scheduler.schedule(() -> handleTimeout(messageId, token), visibilityTimeoutMs, TimeUnit.MILLISECONDS);
         return message;
     }
